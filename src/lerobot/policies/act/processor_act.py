@@ -51,8 +51,6 @@ def make_act_pre_post_processors(
         tuple[PolicyProcessorPipeline[dict[str, Any], dict[str, Any]], PolicyProcessorPipeline[PolicyAction, PolicyAction]]: A tuple containing the
         pre-processor pipeline and the post-processor pipeline.
     """
-    
-    print(">>> ACT PROCESSOR FACTORY CALLED")       # debug
 
 
     # OpenPi approach to chunk-wise relative actions

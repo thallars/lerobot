@@ -71,11 +71,13 @@ def main():
     else:
         print("Train from scratch")
         cfg = ACTConfig(input_features=input_features, output_features=output_features, device=str(device))
+
+        # Relative action case block
         cfg.use_relative_actions = USE_RELATIVE_ACTIONS
-        cfg.action_feature_names = dataset_metadata.features["action"]["names"]
         cfg.relative_exclude_joints = ["gripper"]
+        cfg.action_feature_names = dataset_metadata.features["action"]["names"]
         cfg.state_feature_names = dataset_metadata.features["observation.state"]["names"]
-        print(dataset_metadata.features["action"]["names"])        # debug
+
         policy = ACTPolicy(cfg)
         preprocessor, postprocessor = make_pre_post_processors(cfg, dataset_stats=dataset_metadata.stats)
 

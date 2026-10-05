@@ -69,12 +69,6 @@ def main() -> None:
 
     use_relative_actions = policy.config.use_relative_actions
 
-    # debug
-    rel = next(s for s in preprocess.steps if isinstance(s, RelativeActionsProcessorStep))
-    abs_ = next(s for s in postprocess.steps if isinstance(s, AbsoluteActionsProcessorStep))
-    print(rel.enabled, abs_.enabled)
-    print("linked:", abs_.relative_step is rel)
-
     safety_pipeline = RobotProcessorPipeline[RobotAction, RobotAction](
         steps=[
             KukaJointBoundsAndSafety(joint_offset_deg=cfg.pipeline.joint_offset_deg),

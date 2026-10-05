@@ -131,7 +131,7 @@ class ACTConfig(PreTrainedConfig):
     use_relative_actions: bool = False
     # Joint names to exclude from relative (kept absolute). Empty list = all dims relative.
     relative_exclude_joints: list[str] = field(default_factory=lambda: ["gripper"])
-    # Populated at runtime from dataset metadata by make_policy.
+    # Used to map names in observation and action while computing relative actions
     action_feature_names: list[str] | None = None
     state_feature_names: list[str] | None = None
 
