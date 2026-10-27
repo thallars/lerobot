@@ -16,6 +16,7 @@ import serial
 logger = logging.getLogger(__name__)
 
 FRAME_TERMINATOR = b"\n"
+STREAM_PAUSE_S = 0.1
 
 
 class SerialFrameReader(threading.Thread):
@@ -26,9 +27,12 @@ class SerialFrameReader(threading.Thread):
         self._ser = ser
         self._num_channels = num_channels
         self._lock = threading.Lock()
+        self._frame_received = threading.Condition(self._lock)
         self._write_lock = threading.Lock()
         self._latest: list[int] | None = None
         self._latest_ts: float = 0.0
+        self._latest_monotonic_ts: float = 0.0
+        self._stream_resumed_ts: float = 0.0
         self._stop_event = threading.Event()
         self._buffer = b""
 
@@ -52,9 +56,14 @@ class SerialFrameReader(threading.Thread):
 
             values = self._parse_frame(complete[-1].strip())
             if values is not None:
-                with self._lock:
+                with self._frame_received:
+                    now = time.monotonic()
+                    if self._latest is not None and now - self._latest_monotonic_ts >= STREAM_PAUSE_S:
+                        self._stream_resumed_ts = now
                     self._latest = values
                     self._latest_ts = time.time()
+                    self._latest_monotonic_ts = now
+                    self._frame_received.notify_all()
 
     def _parse_frame(self, line: bytes) -> list[int] | None:
         if not line:
@@ -94,20 +103,29 @@ class SerialFrameReader(threading.Thread):
 
     def stop(self) -> None:
         self._stop_event.set()
+        with self._frame_received:
+            self._frame_received.notify_all()
 
-    def wait_for_frame(self, timeout_s: float = 2.0) -> list[int]:
+    def wait_for_frame(self, timeout_s: float = 2.0, *, resume_after_ts: float | None = None) -> list[int]:
+        """Wait for the first valid frame, or for telemetry to resume after a command.
+
+        By default an existing frame can be returned immediately. With
+        ``resume_after_ts`` (time.monotonic()), require a frame following a
+        telemetry pause after that timestamp: STM32 stops streaming during a
+        blocking move, and frames still in transit do not signal completion.
+        """
         deadline = time.monotonic() + timeout_s
-
-        while time.monotonic() < deadline:
-            with self._lock:
-                if self._latest is not None:
-                    return self._latest
-
-            time.sleep(0.001)
-
-        raise ConnectionError(
-            f"No valid frame received from the STM32 board within {timeout_s}s."
-        )
+        with self._frame_received:
+            while self._latest is None or (
+                resume_after_ts is not None and self._stream_resumed_ts <= resume_after_ts
+            ):
+                if self._stop_event.is_set():
+                    raise ConnectionError("STM32 reader stopped while waiting for a frame.")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ConnectionError(f"No matching STM32 frame received within {timeout_s}s.")
+                self._frame_received.wait(timeout=remaining)
+            return self._latest.copy()
 
     def send(self, values: list[int]) -> None:
         """

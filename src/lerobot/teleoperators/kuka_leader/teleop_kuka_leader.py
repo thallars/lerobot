@@ -189,7 +189,11 @@ class KukaLeader(Teleoperator):
         pass
 
     def send_goal_position(self, goal: RobotAction, hold_s: float = 3.0, tolerance_counts: int = 50) -> None:
+        """Wait up to hold_s for telemetry to resume after a blocking STM32 move.
 
+        A non-positive hold_s skips waiting. Resumed telemetry signals the end
+        of the blocking call; position tolerance is checked separately.
+        """
         if not self.is_connected:
             raise RuntimeError(f"{self} is not connected.")
         if not self.is_calibrated:
@@ -216,16 +220,17 @@ class KukaLeader(Teleoperator):
             f"{self}: sending goal position "
             f"{dict(zip(self.joint_names, raw_targets, strict=True))}"
         )
+        sent_at = time.monotonic()
         self._reader.send(raw_targets)
 
-        if hold_s > 0:
-            time.sleep(hold_s)
-
         try:
-            actual_raw = self._reader.latest(max_age_s=self.config.max_frame_age_s)
+            if hold_s > 0:
+                actual_raw = self._reader.wait_for_frame(timeout_s=hold_s, resume_after_ts=sent_at)
+            else:
+                actual_raw = self._reader.latest(max_age_s=self.config.max_frame_age_s)
         except ConnectionError:
             logger.warning(
-                f"{self}: no fresh frame after sending the goal position; "
+                f"{self}: telemetry unavailable or did not resume after sending the goal position; "
                 f"cannot verify it was reached."
             )
             return
@@ -237,7 +242,8 @@ class KukaLeader(Teleoperator):
             if deviation > tolerance_counts:
                 logger.warning(
                     f"{joint}: raw position {actual_raw[idx]} differs from commanded "
-                    f"target {raw_targets[idx]} by {deviation} counts after {hold_s}s."
+                    f"target {raw_targets[idx]} by {deviation} counts "
+                    f"after {time.monotonic() - sent_at:.2f}s."
                 )
 
     # utils
